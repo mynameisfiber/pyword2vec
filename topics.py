@@ -6,6 +6,7 @@ import re
 from operator import itemgetter
 from collections import defaultdict
 from itertools import tee
+import cPickle
 
 from pprint import pprint
 import logging
@@ -33,6 +34,13 @@ class TopicModel(object):
         self._kmean.fit(bare_vectors)
         self.word_to_cluster = dict(zip(words, self._kmean.labels_))
         logging.info("Training complete")
+
+    def save(self, fd):
+        cPickle.dump(self, fd, -1)
+
+    @classmethod
+    def load(cls, fd):
+        return cPickle.load(fd)
 
     def classify_word(self, word):
         return self.word_to_cluster.get(word)
@@ -64,7 +72,7 @@ class TopicModel(object):
 
         cluster_to_word = defaultdict(list)
         for word, cluster in word_to_cluster.iteritems():
-            cluster_to_word[cluster].append(cluster)
+            cluster_to_word[cluster].append(word)
 
         cluster_scored = map(lambda x : (x[0], self._score_words(x[1])), cluster_to_word.iteritems())
         cluster_scored.sort(key=itemgetter(1))
@@ -73,18 +81,26 @@ class TopicModel(object):
 
 
 def clean_text(text):
-    text, nchanges = re.subn(r"([a-z])[^a-z ]+([a-z])", r"\1\2", text.lower())
+    text = text.lower()
+    #for num, num_word in ((1, " one "), (2, " two "), (3, " three "), (4, " four "), (5, " five "), (6, " six "), (7, " seven "), (8, " eight "), (9, " nine "), (0, " zero ")):
+    #    text.replace(str(num), num_word)
+    text, nchanges = re.subn(r"([a-z])[^a-z ]+([a-z])", r"\1\2", text)
     text, nchanges = re.subn(r"[^a-z ]+", r" ", text)
     text, nchanges = re.subn(r"[ ]+", r" ", text)
     return text
 
 if __name__ == "__main__":
     article = clean_text(open("/mnt/data/train/article1", "r").read())
-    weights = wv.load_weights("/mnt/data/wiki-article-pages/wiki_vocab_20130805")
-    vectors = wv.load_vector("/mnt/data/wiki-article-pages/vectors_phrases-size:600-window:5.bin")
 
-    tm = TopicModel(vectors, 45, weights)
-    tm.train()
+    try:
+        tm = TopicModel.load(open("topicmodel.pkl", "w+"))
+    except:
+        weights = wv.load_weights("/mnt/data/wiki-article-pages/wiki_vocab_20130805")
+        vectors = wv.load_vector("/mnt/data/wiki-article-pages/vectors_phrases-size:600-window:5.bin")
+
+        tm = TopicModel(vectors, 45, weights)
+        tm.train()
+        tm.save(open("topicmodel.pkl", "w+"))
     classification = tm.classify_text(article)
 
     print "Topic weights:"
