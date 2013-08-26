@@ -95,8 +95,8 @@ if __name__ == "__main__":
     try:
         tm = TopicModel.load(open("topicmodel.pkl", "w+"))
     except:
-        weights = wv.load_weights("/mnt/data/wiki-article-pages/wiki_vocab_20130805")
-        vectors = wv.load_vector("/mnt/data/wiki-article-pages/vectors_phrases-size:600-window:5.bin")
+        weights = wv.load_weights("/home/micha/data/wiki_data/vectors_phrases-size:200-window:5.bin")
+        vectors = wv.load_vector("/home/micha/data/wiki_data/wiki_phrase_vocab_20130805")
 
         tm = TopicModel(vectors, 45, weights)
         tm.train()
