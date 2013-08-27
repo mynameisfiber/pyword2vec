@@ -15,7 +15,7 @@ def _read_until(fd, sentinal):
         result += tmp
 
 def load_weights(filename):
-    weights = dict(line.strip().split() for line in open(filename))
+    weights = dict(line.strip().split() for line in open(filename, "r"))
     for word, c in weights.iteritems():
         weights[word] = int(c)
     return weights

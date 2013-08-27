@@ -1,7 +1,9 @@
 import word2vec as wv
 from sklearn import cluster
 import numpy as np
+from nltk.corpus import stopwords
 
+import time
 import re
 from operator import itemgetter
 from collections import defaultdict
@@ -12,6 +14,11 @@ from pprint import pprint
 import logging
 
 logging.basicConfig(level=logging.INFO)
+stop_words = set(stopwords.words("english"))
+
+if not hasattr(globals(), "profile"):
+    def profile(fxn):
+        return fxn
 
 def iter_pairs(dom):
     a,b = tee(dom, 2)
@@ -20,20 +27,28 @@ def iter_pairs(dom):
         yield a.next(), b.next()
 
 class TopicModel(object):
-    def __init__(self, vectors, n_clusters, word_weights=None):
+    def __init__(self, vectors, n_clusters, word_weights=None, kmean_parameters={}):
         self.vectors = vectors
         self.n_clusters = n_clusters
         self.word_weights = word_weights or defaultdict(lambda x : 1)
-        self._kmean = cluster.MiniBatchKMeans(n_clusters=n_clusters, compute_labels=True)
+        self._kmean_parameters = {"n_clusters": n_clusters, "compute_labels": True}
+        self._kmean_parameters.update(kmean_parameters)
+        self._kmean = cluster.MiniBatchKMeans(**self._kmean_parameters)
         self.word_to_cluster = None
 
-    def train(self):
+    def train(self, remove_stopwords=True):
+        start = time.time()
         logging.info("Starting training")
+
+        if remove_stopwords:
+            for word in stop_words:
+                self.vectors.pop(word, None)
+
         words, bare_vectors = zip(*self.vectors.iteritems())
         bare_vectors = np.asarray(bare_vectors)
         self._kmean.fit(bare_vectors)
         self.word_to_cluster = dict(zip(words, self._kmean.labels_))
-        logging.info("Training complete")
+        logging.info("Training complete: %fs", time.time() - start)
 
     def save(self, fd):
         cPickle.dump(self, fd, -1)
@@ -54,6 +69,7 @@ class TopicModel(object):
         else:
             return 0
 
+    @profile
     def classify_text(self, text):
         logging.info("Starting text classification")
         # TODO: right now we only consider a word from an article ONCE
@@ -82,26 +98,23 @@ class TopicModel(object):
 
 def clean_text(text):
     text = text.lower()
-    #for num, num_word in ((1, " one "), (2, " two "), (3, " three "), (4, " four "), (5, " five "), (6, " six "), (7, " seven "), (8, " eight "), (9, " nine "), (0, " zero ")):
-    #    text.replace(str(num), num_word)
     text, nchanges = re.subn(r"([a-z])[^a-z ]+([a-z])", r"\1\2", text)
     text, nchanges = re.subn(r"[^a-z ]+", r" ", text)
-    text, nchanges = re.subn(r"[ ]+", r" ", text)
+    text = " ".join(word for word in text.split(" ") if word and word not in stop_words)
     return text
 
 if __name__ == "__main__":
-    article = clean_text(open("/mnt/data/train/article1", "r").read())
+    articles = []
+    for i in range(4):
+        content = open("/mnt/data/test/article-%d.txt" % i, "r").read()
+        articles.append(clean_text(content))
 
-    try:
-        tm = TopicModel.load(open("topicmodel.pkl", "w+"))
-    except:
-        weights = wv.load_weights("/home/micha/data/wiki_data/vectors_phrases-size:200-window:5.bin")
-        vectors = wv.load_vector("/home/micha/data/wiki_data/wiki_phrase_vocab_20130805")
+    vectors = wv.load_vector("/mnt/data/wiki_data/vectors_phrases-size:200-window:5.bin")
+    weights = wv.load_weights("/mnt/data/wiki_data/wiki_phrase_vocab_20130805")
 
-        tm = TopicModel(vectors, 45, weights)
-        tm.train()
-        tm.save(open("topicmodel.pkl", "w+"))
-    classification = tm.classify_text(article)
+    tm = TopicModel(vectors, 45, weights, kmean_parameters={"batch_size" : 500, "n_init" : 100})
+    tm.train()
 
-    print "Topic weights:"
-    pprint(classification)
+    for i, article in enumerate(articles):
+        result = tm.classify_text(article)
+        print "Article %d - category %d" % (i, result[-1][0]) 
